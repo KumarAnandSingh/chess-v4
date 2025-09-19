@@ -52,7 +52,6 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       // Make environment variables available at build time
-      __BACKEND_URL__: JSON.stringify(process.env.VITE_BACKEND_URL || backendUrl),
       __NODE_ENV__: JSON.stringify(mode),
     },
   }

@@ -27,12 +27,12 @@ export interface Environment {
 
 // Helper function to get environment variable with fallback
 const getEnvVar = (key: string, fallback: string = ''): string => {
-  return import.meta.env[key] || fallback;
+  return (import.meta.env && import.meta.env[key]) || fallback;
 };
 
 // Determine if we're in development mode
-const isDevelopment = import.meta.env.MODE === 'development';
-const isProduction = import.meta.env.MODE === 'production';
+const isDevelopment = (import.meta.env && import.meta.env.MODE) === 'development';
+const isProduction = (import.meta.env && import.meta.env.MODE) === 'production';
 
 // Base URLs
 const getBackendUrl = (): string => {
@@ -40,21 +40,20 @@ const getBackendUrl = (): string => {
     return 'http://localhost:3001';
   }
 
-  // Use environment variable in production, fallback to build-time variable
-  return getEnvVar('VITE_BACKEND_URL') ||
-         (typeof __BACKEND_URL__ !== 'undefined' ? __BACKEND_URL__ : 'http://localhost:3001');
+  // Use environment variable in production
+  return getEnvVar('VITE_BACKEND_URL', 'http://localhost:3001');
 };
 
 const getWebSocketUrl = (): string => {
   const backendUrl = getBackendUrl();
-  return getEnvVar('VITE_WEBSOCKET_URL') || backendUrl;
+  return getEnvVar('VITE_WEBSOCKET_URL', backendUrl);
 };
 
 // Create environment configuration
 export const environment: Environment = {
   backendUrl: getBackendUrl(),
   websocketUrl: getWebSocketUrl(),
-  nodeEnv: import.meta.env.MODE || 'development',
+  nodeEnv: (import.meta.env && import.meta.env.MODE) || 'development',
   isProduction,
   isDevelopment,
 
@@ -80,14 +79,14 @@ export const environment: Environment = {
 export const {
   backendUrl,
   websocketUrl,
-  isProduction,
-  isDevelopment
+  isProduction: envIsProduction,
+  isDevelopment: envIsDevelopment
 } = environment;
 
 // Development logging
 if (isDevelopment) {
   console.log('🔧 Environment Configuration:', {
-    mode: import.meta.env.MODE,
+    mode: (import.meta.env && import.meta.env.MODE) || 'unknown',
     backendUrl: environment.backendUrl,
     websocketUrl: environment.websocketUrl,
     features: environment.features,
