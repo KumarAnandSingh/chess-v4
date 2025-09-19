@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  Chess,
+  Crown as Chess,
   Home,
   Users,
   Bot,

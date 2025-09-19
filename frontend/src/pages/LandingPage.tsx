@@ -10,7 +10,7 @@ import {
   Star,
   TrendingUp,
   ArrowRight,
-  Chess,
+  Crown as Chess,
   Clock,
   Trophy,
   Target
