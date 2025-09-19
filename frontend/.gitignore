@@ -89,3 +89,4 @@ pids
 # public/sounds/*.mp3
 # public/sounds/*.wav
 # public/sounds/*.ogg
+.vercel
