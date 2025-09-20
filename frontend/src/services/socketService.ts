@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client'
 import { SOCKET_EVENTS } from '@/utils/constants'
 import toast from 'react-hot-toast'
+import { environment } from '@/config/environment'
 
 // Types
 export interface RoomData {
@@ -79,7 +80,7 @@ class SocketService {
       this.socket.disconnect()
     }
 
-    this.socket = io('http://localhost:3001', {
+    this.socket = io(environment.websocketUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       reconnection: true,
