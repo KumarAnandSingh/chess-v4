@@ -52,10 +52,10 @@ class AudioService {
         const sound = new Howl({
           src: [src],
           volume: this.volume,
-          preload: true,
+          preload: false, // Don't preload to avoid 404 errors
           html5: true, // Use HTML5 Audio for better mobile support
           onloaderror: (id, error) => {
-            console.warn(`Failed to load sound ${key}:`, error)
+            console.warn(`Audio file not found: ${key} - Audio disabled for this sound`)
           }
         })
         this.sounds.set(key.toLowerCase(), sound)
