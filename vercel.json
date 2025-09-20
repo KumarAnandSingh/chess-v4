@@ -3,6 +3,7 @@
   "buildCommand": "cd frontend && npm ci && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm ci",
+  "framework": "vite",
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
@@ -35,8 +36,13 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/.*).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "env": {
+    "VITE_BACKEND_URL": "https://web-production-4fb4.up.railway.app",
+    "VITE_WEBSOCKET_URL": "https://web-production-4fb4.up.railway.app",
+    "VITE_NODE_ENV": "production"
+  }
 }
