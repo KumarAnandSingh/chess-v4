@@ -70,7 +70,7 @@ class SocketService {
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
 
-  connect() {
+  connect(username?: string, userPreferences?: any) {
     if (this.socket?.connected) {
       return this.socket
     }
@@ -80,7 +80,20 @@ class SocketService {
       this.socket.disconnect()
     }
 
+    // Get user data for authentication
+    const auth = {
+      username: username || `Player${Math.floor(Math.random() * 10000)}`,
+      rating: 1200,
+      preferences: userPreferences || {
+        timeControl: 'blitz',
+        autoQueen: true,
+        showCoordinates: true,
+        playSound: true
+      }
+    }
+
     this.socket = io(environment.websocketUrl, {
+      auth,
       transports: ['websocket', 'polling'],
       timeout: 20000,
       reconnection: true,
@@ -166,14 +179,13 @@ class SocketService {
         return
       }
 
-      this.socket.emit(SOCKET_EVENTS.CREATE_ROOM, { timeControl })
-
-      this.socket.once(SOCKET_EVENTS.ROOM_CREATED, (data: RoomData) => {
-        resolve(data)
-      })
-
-      this.socket.once(SOCKET_EVENTS.ROOM_ERROR, (error) => {
-        reject(new Error(error.message))
+      // Use callback pattern as expected by backend
+      this.socket.emit(SOCKET_EVENTS.CREATE_ROOM, { gameSettings: timeControl }, (response: any) => {
+        if (response.success) {
+          resolve(response)
+        } else {
+          reject(new Error(response.error || 'Failed to create room'))
+        }
       })
 
       // Timeout after 10 seconds
@@ -190,14 +202,13 @@ class SocketService {
         return
       }
 
-      this.socket.emit(SOCKET_EVENTS.JOIN_ROOM, { roomCode })
-
-      this.socket.once(SOCKET_EVENTS.ROOM_JOINED, (data: RoomData) => {
-        resolve(data)
-      })
-
-      this.socket.once(SOCKET_EVENTS.ROOM_ERROR, (error) => {
-        reject(new Error(error.message))
+      // Use callback pattern as expected by backend
+      this.socket.emit(SOCKET_EVENTS.JOIN_ROOM, { roomCode }, (response: any) => {
+        if (response.success) {
+          resolve(response)
+        } else {
+          reject(new Error(response.error || 'Failed to join room'))
+        }
       })
 
       // Timeout after 10 seconds

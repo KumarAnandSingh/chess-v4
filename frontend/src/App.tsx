@@ -26,7 +26,7 @@ import { cn } from '@/utils/cn'
 
 function App() {
   const location = useLocation()
-  const { initializeUser } = useAuthStore()
+  const { initializeUser, user } = useAuthStore()
   const { theme, initializeUI } = useUIStore()
 
   useEffect(() => {
@@ -34,15 +34,19 @@ function App() {
     initializeUser()
     initializeUI()
     audioService.initialize()
+  }, [initializeUser, initializeUI])
 
-    // Connect socket when app starts
-    socketService.connect()
+  useEffect(() => {
+    // Connect socket after user is initialized
+    if (user) {
+      socketService.connect(user.name, user.preferences)
+    }
 
     // Cleanup on unmount
     return () => {
       socketService.disconnect()
     }
-  }, [initializeUser, initializeUI])
+  }, [user])
 
   return (
     <div className={cn(
