@@ -11,7 +11,7 @@ restartPolicyMaxRetries = 10
 [env]
 NODE_ENV = "production"
 PORT = "${{ RAILWAY_PUBLIC_PORT || 3001 }}"
-FRONTEND_URL = "https://chess-v4-3axna6cc1-kumaranandsinghs-projects.vercel.app,https://chess-v4-kumaranandsinghs-projects.vercel.app"
+FRONTEND_URL = "https://chess-v4.vercel.app,https://chess-v4-kumaranandsinghs-projects.vercel.app,http://localhost:3000,http://localhost:1420"
 
 [runtime]
 start = "node server.js"
