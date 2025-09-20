@@ -24,10 +24,15 @@ const createRoomRoutes = require('./routes/rooms');
 const app = express();
 const server = http.createServer(app);
 
+// Parse frontend URLs from environment
+const frontendUrls = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
+  : ["http://localhost:3000", "http://localhost:1420"];
+
 // Initialize Socket.IO with CORS
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || ["http://localhost:3000", "http://localhost:1420"],
+    origin: frontendUrls,
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -56,7 +61,7 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || ["http://localhost:3000", "http://localhost:1420"],
+  origin: frontendUrls,
   credentials: true
 }));
 
