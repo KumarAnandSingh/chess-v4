@@ -252,10 +252,6 @@ const RoomPage: React.FC = () => {
     }
 
     attemptJoin()
-    return
-
-    // This code path should not be reached due to the early return above
-    console.log('⚠️ Unexpected code path reached in room join effect')
   }, [code, isInRoom, currentRoom?.code, joinRoom, navigate])
 
   const handleStartGame = () => {

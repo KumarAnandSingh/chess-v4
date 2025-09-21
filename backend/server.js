@@ -792,29 +792,15 @@ process.on('SIGTERM', () => {
   });
 });
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`
-🚀 Chess v4 Backend Server Started
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📡 Server running on port ${PORT}
-🌐 Environment: ${process.env.NODE_ENV || 'development'}
-🏠 Health check: http://localhost:${PORT}/api/health
-🔗 Socket.IO: http://localhost:${PORT}/socket.io
-📁 Room API: http://localhost:${PORT}/api/rooms
+// Only start the listener if this file is executed directly,
+// not when it is imported by tests or other modules.
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`📡 Server running on port ${PORT}`);
+    console.log(`🏠 Health check: http://localhost:${PORT}/api/health`);
+    console.log(`🔗 Socket.IO: http://localhost:${PORT}/socket.io`);
+    console.log(`📁 Room API: http://localhost:${PORT}/api/rooms`);
+  });
+}
 
-Features enabled:
-✅ Room-based private games with 4-digit codes
-✅ Random matchmaking system
-✅ Real-time multiplayer with Socket.IO
-✅ Multiple time controls (Bullet, Blitz, Rapid, Classical)
-✅ Chat system with quick messages
-✅ Spectator mode support
-✅ Reconnection handling
-✅ Authentication and session management
-✅ Comprehensive error handling
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  `);
-});
-
-module.exports = { app, server, io };
+module.exports = server;
