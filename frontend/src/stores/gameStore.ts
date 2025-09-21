@@ -284,8 +284,43 @@ export const useGameStore = create<GameStoreState & GameStoreActions>((set, get)
     })
   },
 
-  updateGameState: (gameState) => {
+  updateGameState: (gameStateOrData) => {
     const { myColor } = get()
+
+    // Check if we received nested data (from move_made events)
+    let gameState = gameStateOrData
+    if (gameStateOrData && gameStateOrData.gameState && !gameStateOrData.position) {
+      console.log('📥 Received nested game data, transforming...')
+      // Transform nested structure to flat structure
+      const nestedState = gameStateOrData.gameState
+      const players = nestedState.players || []
+      const playersObject = players.reduce((acc: any, player: any) => {
+        acc[player.color] = {
+          id: player.id,
+          name: player.name,
+          rating: player.rating || 1200,
+          connected: true
+        }
+        return acc
+      }, {})
+
+      gameState = {
+        gameId: gameStateOrData.gameId || nestedState.gameId,
+        position: nestedState.fen || nestedState.position || gameState.position,
+        turn: nestedState.turn || 'white',
+        moves: nestedState.moves || [],
+        status: nestedState.status || 'active',
+        result: nestedState.result,
+        reason: nestedState.reason,
+        lastMove: nestedState.lastMove,
+        check: nestedState.check,
+        players: playersObject,
+        timeControl: nestedState.timeControl || { time: 300, increment: 5 },
+        clock: nestedState.clock || { white: 300000, black: 300000 }
+      }
+      console.log('✅ Transformed nested game data:', gameState)
+    }
+
     const game = new Chess(gameState.position)
 
     set({

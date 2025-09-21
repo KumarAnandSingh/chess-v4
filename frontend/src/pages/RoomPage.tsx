@@ -33,6 +33,45 @@ const RoomPage: React.FC = () => {
   const currentStateRef = useRef({ user, navigate, initializeGame })
   currentStateRef.current = { user, navigate, initializeGame }
 
+  // Function to transform backend data to frontend format
+  const transformGameData = (backendData: any) => {
+    console.log('🔄 Transforming backend game data to frontend format')
+    console.log('Backend data received:', JSON.stringify(backendData, null, 2))
+
+    const { gameId, gameState, room } = backendData
+
+    // Transform players array to players object with color keys
+    const players = gameState.players || []
+    const playersObject = players.reduce((acc: any, player: any) => {
+      acc[player.color] = {
+        id: player.id,
+        name: player.name,
+        rating: player.rating || 1200,
+        connected: true
+      }
+      return acc
+    }, {})
+
+    // Transform the nested gameState to flattened format expected by frontend
+    const transformedGameState = {
+      gameId: gameId,
+      position: gameState.fen || gameState.position || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      turn: gameState.turn || 'white',
+      moves: gameState.moves || [],
+      status: gameState.status || 'active',
+      result: gameState.result,
+      reason: gameState.reason,
+      lastMove: gameState.lastMove,
+      check: gameState.check,
+      players: playersObject,
+      timeControl: gameState.timeControl || { time: 300, increment: 5 },
+      clock: gameState.clock || { white: 300000, black: 300000 }
+    }
+
+    console.log('✅ Transformed game state:', JSON.stringify(transformedGameState, null, 2))
+    return transformedGameState
+  }
+
   // Listen for game start - set up ONCE when component mounts
   useEffect(() => {
     const handleGameStarted = (data: any) => {
@@ -40,65 +79,72 @@ const RoomPage: React.FC = () => {
       console.log('Current room code:', code)
       console.log('Event gameId:', data?.gameId)
       console.log('Event data keys:', Object.keys(data || {}))
+      console.log('Raw backend data:', JSON.stringify(data, null, 2))
 
-      // Backend sends: { gameId, gameState, room }
-      const { gameId, gameState } = data
       const { user, navigate, initializeGame } = currentStateRef.current
 
       // Validate required data
-      if (!gameId || !gameState || !user) {
+      if (!data?.gameId || !data?.gameState || !user) {
         console.error('❌ Missing required data in game_started event')
-        console.error('- GameId:', !!gameId)
-        console.error('- GameState:', !!gameState)
+        console.error('- GameId:', !!data?.gameId)
+        console.error('- GameState:', !!data?.gameState)
         console.error('- User:', !!user?.name)
         return
       }
 
-      console.log('✅ Valid game_started event with gameId:', gameId)
+      try {
+        // Transform backend data to frontend format
+        const transformedGameState = transformGameData(data)
+        const gameId = data.gameId
 
-      // Determine player color using socket ID (most reliable method)
-      const currentSocket = socketService.getSocket()
-      const currentSocketId = currentSocket?.id
-      let myColor: 'white' | 'black' | null = null
+        console.log('✅ Valid game_started event with gameId:', gameId)
 
-      console.log('🔍 Current socket ID:', currentSocketId)
-      console.log('🔍 Players in gameState:', gameState.players)
+        // Determine player color using socket ID (most reliable method)
+        const currentSocket = socketService.getSocket()
+        const currentSocketId = currentSocket?.id
+        let myColor: 'white' | 'black' | null = null
 
-      if (currentSocketId && gameState.players) {
-        // Try to find player by socket ID first
-        const myPlayer = gameState.players.find((p: any) => p.id === currentSocketId)
+        console.log('🔍 Current socket ID:', currentSocketId)
+        console.log('🔍 Players in transformed gameState:', transformedGameState.players)
 
-        if (myPlayer) {
-          myColor = myPlayer.color
-          console.log('✅ Found player by socket ID:', { id: myPlayer.id, color: myPlayer.color, name: myPlayer.name })
-        } else {
-          // Fallback to username matching if socket ID doesn't work
-          const playerByName = gameState.players.find((p: any) => p.name === user.name)
-          if (playerByName) {
-            myColor = playerByName.color
-            console.log('✅ Found player by username fallback:', { name: playerByName.name, color: playerByName.color })
+        // Check if we have the proper players object
+        if (currentSocketId && transformedGameState.players) {
+          // Check both white and black players for socket ID match
+          if (transformedGameState.players.white?.id === currentSocketId) {
+            myColor = 'white'
+            console.log('✅ Found player as white by socket ID:', transformedGameState.players.white)
+          } else if (transformedGameState.players.black?.id === currentSocketId) {
+            myColor = 'black'
+            console.log('✅ Found player as black by socket ID:', transformedGameState.players.black)
           } else {
-            console.error('❌ Could not find player by socket ID or username')
-            console.error('Current socket ID:', currentSocketId)
-            console.error('Current username:', user.name)
-            console.error('Available players:', gameState.players)
-            return
+            // Fallback to username matching
+            if (transformedGameState.players.white?.name === user.name) {
+              myColor = 'white'
+              console.log('✅ Found player as white by username fallback:', transformedGameState.players.white)
+            } else if (transformedGameState.players.black?.name === user.name) {
+              myColor = 'black'
+              console.log('✅ Found player as black by username fallback:', transformedGameState.players.black)
+            } else {
+              console.error('❌ Could not find player by socket ID or username')
+              console.error('Current socket ID:', currentSocketId)
+              console.error('Current username:', user.name)
+              console.error('Available players:', transformedGameState.players)
+              return
+            }
           }
         }
-      }
 
-      if (!myColor) {
-        console.error('❌ Failed to determine player color')
-        return
-      }
+        if (!myColor) {
+          console.error('❌ Failed to determine player color')
+          return
+        }
 
-      console.log('🎨 Player color determined:', myColor)
-      console.log('🎮 Initializing game and navigating...')
+        console.log('🎨 Player color determined:', myColor)
+        console.log('🎮 Initializing game and navigating...')
 
-      try {
-        // Initialize game store FIRST
-        console.log('🔄 About to initialize game store...')
-        initializeGame(gameState, myColor)
+        // Initialize game store with transformed data
+        console.log('🔄 About to initialize game store with transformed data...')
+        initializeGame(transformedGameState, myColor)
         console.log('✅ Game store initialized successfully')
 
         // Small delay to ensure store is updated
@@ -148,12 +194,12 @@ const RoomPage: React.FC = () => {
         setTimeout(() => {
           try {
             console.log('🔄 Attempting fallback navigation...')
-            navigate(`/game/${gameId}`, { replace: true })
+            navigate(`/game/${data.gameId}`, { replace: true })
             console.log('✅ Fallback navigation successful')
           } catch (retryError) {
             console.error('❌ Fallback navigation failed:', retryError)
             console.log('🌐 Using window.location as last resort...')
-            window.location.href = `/game/${gameId}`
+            window.location.href = `/game/${data.gameId}`
           }
         }, 100)
       }

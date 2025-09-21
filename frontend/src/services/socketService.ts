@@ -195,6 +195,15 @@ class SocketService {
       toast.error(error.message || 'An error occurred')
     })
 
+    // Global game_started listener for debugging - catch events that might be missed
+    this.socket.on('game_started', (data) => {
+      console.log('\n🔥 GLOBAL game_started EVENT DETECTED in socketService!')
+      console.log('Global listener received data:', JSON.stringify(data, null, 2))
+      console.log('Current URL:', window.location.href)
+      console.log('Socket ID:', this.socket?.id)
+      console.log('Socket rooms:', Array.from(this.socket?.rooms || []))
+    })
+
     // Handle authentication errors
     this.socket.on('auth_error', (error) => {
       console.error('\n❌ AUTHENTICATION ERROR')
