@@ -2,6 +2,8 @@
 
 A modern, real-time multiplayer chess platform built with React, TypeScript, and Node.js.
 
+<!-- CI/CD Test: Sept 22, 2025 - Verifying deployment pipeline functionality after Jest dependency fix -->
+
 ## Features ✨
 
 - **Real-time Multiplayer**: Play chess with friends using Socket.IO
