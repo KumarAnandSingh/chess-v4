@@ -358,7 +358,10 @@ function socketAuthMiddleware(authManager) {
   return (socket, next) => {
     const { username, sessionId } = socket.handshake.auth;
 
+    console.log('Socket auth attempt:', { username, sessionId, socketId: socket.id });
+
     if (!username) {
+      console.log('Auth failed: Username required');
       return next(new Error('Username required'));
     }
 

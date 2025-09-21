@@ -35,12 +35,12 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
   }
 
   const isRoomCreator = currentRoom.players[0]?.id === user.id
-  const canStartGame = currentRoom.players.length === 2 && currentRoom.status === 'ready'
+  const canStartGame = currentRoom.players.length === 2 && (currentRoom.status === 'ready' || currentRoom.status === 'waiting')
   const opponent = currentRoom.players.find(p => p.id !== user.id)
 
   const copyRoomCode = async () => {
     try {
-      await navigator.clipboard.writeText(currentRoom.roomCode)
+      await navigator.clipboard.writeText(currentRoom.code)
       setCodeCopied(true)
       toast.success('Room code copied!')
       setTimeout(() => setCodeCopied(false), 2000)
@@ -52,8 +52,8 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
   const shareRoom = async () => {
     const shareData = {
       title: 'Join my Chess game!',
-      text: `Join my chess game with room code: ${currentRoom.roomCode}`,
-      url: `${window.location.origin}/room/${currentRoom.roomCode}`,
+      text: `Join my chess game with room code: ${currentRoom.code}`,
+      url: `${window.location.origin}/room/${currentRoom.code}`,
     }
 
     try {
@@ -69,7 +69,9 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
   }
 
   const handleStartGame = () => {
-    startGame()
+    // Note: The backend automatically starts the game when 2 players join
+    // This button serves as UI feedback only - game will start via socket events
+    console.log('Start game button clicked - game will start automatically when both players are ready')
     onStartGame?.()
   }
 
@@ -84,7 +86,7 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
       <Card variant="elevated">
         <CardHeader
           title="Room Lobby"
-          subtitle={`Room Code: ${currentRoom.roomCode}`}
+          subtitle={`Room Code: ${currentRoom.code}`}
           action={
             <div className="flex gap-2">
               <Button
@@ -112,7 +114,7 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
           <div className="text-center mb-6">
             <div className="inline-flex items-center gap-3 p-4 bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/20 dark:to-blue-900/20 rounded-xl border border-primary-200 dark:border-primary-700">
               <div className="room-code text-3xl">
-                {currentRoom.roomCode}
+                {currentRoom.code}
               </div>
             </div>
           </div>
@@ -125,7 +127,7 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
                 Time Control
               </div>
               <div className="text-xs text-slate-600 dark:text-slate-400">
-                {Math.floor(currentRoom.timeControl.time / 60)}+{currentRoom.timeControl.increment}
+                {Math.floor((currentRoom.gameSettings?.initialTime || 300000) / 60000)}+{(currentRoom.gameSettings?.increment || 5000) / 1000}
               </div>
             </div>
             <div className="text-center p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
@@ -259,21 +261,10 @@ const RoomLobby: React.FC<RoomLobbyProps> = ({ onStartGame }) => {
         </Button>
 
         <div className="flex gap-3">
-          {canStartGame && isRoomCreator && (
-            <Button
-              variant="success"
-              size="lg"
-              onClick={handleStartGame}
-              leftIcon={<Play className="w-5 h-5" />}
-            >
-              Start Game
-            </Button>
-          )}
-
-          {canStartGame && !isRoomCreator && (
-            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
-              <Clock className="w-4 h-4" />
-              Waiting for host to start the game...
+          {currentRoom.players.length === 2 && (
+            <div className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 font-medium">
+              <Play className="w-4 h-4 animate-pulse" />
+              Game starting automatically...
             </div>
           )}
 

@@ -208,6 +208,19 @@ class RoomManager {
   }
 
   /**
+   * Update room status
+   * @param {string} roomCode - Room code
+   * @param {string} status - New status
+   */
+  updateRoomStatus(roomCode, status) {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    if (room) {
+      room.status = status;
+      console.log(`Room ${roomCode} status updated to: ${status}`);
+    }
+  }
+
+  /**
    * Get all active rooms (for admin/monitoring)
    * @returns {Array} Array of room information
    */
@@ -289,6 +302,27 @@ class Room {
   addPlayer(playerId, playerName, isSpectator = false) {
     this.updateActivity();
 
+    // Check if player is already in the room
+    if (this.players.has(playerId)) {
+      const existingPlayer = this.players.get(playerId);
+      console.log(`Player ${playerName} (${playerId}) already in room ${this.code} as ${existingPlayer.color}`);
+      return {
+        success: true,
+        role: 'player',
+        color: existingPlayer.color,
+        message: 'Already in room'
+      };
+    }
+
+    if (this.spectators.has(playerId)) {
+      console.log(`Player ${playerName} (${playerId}) already in room ${this.code} as spectator`);
+      return {
+        success: true,
+        role: 'spectator',
+        message: 'Already in room as spectator'
+      };
+    }
+
     if (isSpectator) {
       this.spectators.set(playerId, {
         id: playerId,
@@ -318,6 +352,11 @@ class Room {
       joinedAt: new Date(),
       ready: false
     });
+
+    // Update room status to 'ready' when room is full
+    if (this.players.size === this.maxPlayers) {
+      this.status = 'ready';
+    }
 
     return { success: true, role: 'player', color: color };
   }

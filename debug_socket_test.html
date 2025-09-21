@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Debug Test</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Debug Test</h1>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+
+        function addLog(message) {
+            console.log(message);
+            log.innerHTML += `<p>${new Date().toLocaleTimeString()}: ${message}</p>`;
+        }
+
+        // Connect to server
+        const socket = io('http://localhost:3001', {
+            auth: {
+                username: 'TestPlayer1',
+                rating: 1200,
+                preferences: {
+                    timeControl: 'blitz',
+                    autoQueen: true,
+                    showCoordinates: true,
+                    playSound: true
+                }
+            }
+        });
+
+        socket.on('connect', () => {
+            addLog('Connected to server with ID: ' + socket.id);
+
+            // Set up game_started listener first
+            socket.on('game_started', (data) => {
+                addLog('RECEIVED game_started event: ' + JSON.stringify(data));
+            });
+
+            // Create a room
+            socket.emit('create_room', {
+                gameSettings: { time: 300, increment: 3 }
+            }, (response) => {
+                addLog('Room created: ' + JSON.stringify(response));
+                if (response.success) {
+                    window.roomCode = response.room.code;
+                    addLog('Room code: ' + window.roomCode);
+
+                    // Now create second connection to join
+                    const socket2 = io('http://localhost:3001', {
+                        auth: {
+                            username: 'TestPlayer2',
+                            rating: 1200,
+                            preferences: {
+                                timeControl: 'blitz',
+                                autoQueen: true,
+                                showCoordinates: true,
+                                playSound: true
+                            }
+                        }
+                    });
+
+                    socket2.on('connect', () => {
+                        addLog('Second player connected: ' + socket2.id);
+
+                        // Set up game_started listener for second player
+                        socket2.on('game_started', (data) => {
+                            addLog('Player 2 RECEIVED game_started event: ' + JSON.stringify(data));
+                        });
+
+                        // Join the room
+                        socket2.emit('join_room', {
+                            roomCode: window.roomCode
+                        }, (response) => {
+                            addLog('Player 2 joined: ' + JSON.stringify(response));
+                        });
+                    });
+                }
+            });
+        });
+
+        socket.on('disconnect', () => {
+            addLog('Disconnected from server');
+        });
+
+        socket.on('error', (error) => {
+            addLog('Socket error: ' + JSON.stringify(error));
+        });
+    </script>
+</body>
+</html>

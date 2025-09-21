@@ -13,6 +13,9 @@ import PracticePage from '@/pages/PracticePage'
 // Layout
 import Layout from '@/components/layout/Layout'
 
+// Debug
+import ConnectionDebug from '@/components/debug/ConnectionDebug'
+
 // Services
 import { socketService } from '@/services/socketService'
 import { audioService } from '@/services/audioService'
@@ -37,16 +40,15 @@ function App() {
   }, [initializeUser, initializeUI])
 
   useEffect(() => {
-    // Connect socket after user is initialized
-    if (user) {
+    // Connect socket once after user is initialized
+    if (user && !socketService.isSocketConnected()) {
+      console.log('🔌 Connecting socket for user:', user.name)
       socketService.connect(user.name, user.preferences)
     }
-
-    // Cleanup on unmount
-    return () => {
-      socketService.disconnect()
-    }
   }, [user])
+
+  // Note: Removed socket disconnect on app unmount to prevent
+  // unnecessary disconnections in React development mode
 
   return (
     <div className={cn(
@@ -126,6 +128,9 @@ function App() {
           </Routes>
         </AnimatePresence>
       </Layout>
+
+      {/* Debug panel - only in development */}
+      {import.meta.env.DEV && <ConnectionDebug />}
     </div>
   )
 }

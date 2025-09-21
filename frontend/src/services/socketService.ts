@@ -5,12 +5,14 @@ import { environment } from '@/config/environment'
 
 // Types
 export interface RoomData {
-  roomCode: string
-  roomId: string
+  code: string
   players: Player[]
   status: 'waiting' | 'ready' | 'playing' | 'finished'
-  timeControl: TimeControl
+  gameSettings: any
   createdAt: string
+  playerCount: number
+  spectatorCount: number
+  maxPlayers: number
 }
 
 export interface Player {
@@ -69,16 +71,32 @@ class SocketService {
   private isConnected = false
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
+  private isConnecting = false
 
   connect(username?: string, userPreferences?: any) {
-    if (this.socket?.connected) {
+    // If socket exists and is connected, just return it
+    if (this.socket?.connected && this.isConnected) {
+      console.log('✅ Socket already connected, reusing existing connection')
+      console.log('Socket ID:', this.socket.id)
       return this.socket
     }
 
-    // Disconnect existing socket if any
-    if (this.socket) {
-      this.socket.disconnect()
+    // Prevent multiple simultaneous connection attempts
+    if (this.isConnecting) {
+      console.log('⏳ Socket connection already in progress, waiting...')
+      return this.socket
     }
+
+    // Clean up any existing socket completely
+    if (this.socket) {
+      console.log('🧹 Cleaning up existing socket before creating new one')
+      this.socket.removeAllListeners()
+      this.socket.disconnect()
+      this.socket = null
+      this.isConnected = false
+    }
+
+    this.isConnecting = true
 
     // Get user data for authentication
     const auth = {
@@ -92,14 +110,22 @@ class SocketService {
       }
     }
 
+    console.log('\n🔌 CREATING NEW SOCKET CONNECTION')
+    console.log('Auth data:', auth)
+    console.log('WebSocket URL:', environment.websocketUrl)
+
     this.socket = io(environment.websocketUrl, {
       auth,
-      transports: ['websocket', 'polling'],
-      timeout: 20000,
+      transports: ['polling', 'websocket'], // Start with polling for reliability
+      timeout: 10000, // Reasonable timeout
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      forceNew: true, // Force new connection to avoid conflicts
+      upgrade: true,
+      autoConnect: true,
+      withCredentials: true, // Match backend CORS configuration
     })
 
     this.setupEventListeners()
@@ -111,14 +137,20 @@ class SocketService {
 
     this.socket.on(SOCKET_EVENTS.CONNECT, () => {
       this.isConnected = true
+      this.isConnecting = false
       this.reconnectAttempts = 0
-      console.log('Connected to server')
+      console.log('\n✅ CONNECTED TO SERVER')
+      console.log('Socket ID:', this.socket?.id)
+      console.log('Transport:', this.socket?.io.engine.transport.name)
       toast.success('Connected to server')
     })
 
     this.socket.on(SOCKET_EVENTS.DISCONNECT, (reason) => {
       this.isConnected = false
-      console.log('Disconnected from server:', reason)
+      this.isConnecting = false
+      console.log('\n❌ DISCONNECTED FROM SERVER')
+      console.log('Reason:', reason)
+      console.log('Socket ID was:', this.socket?.id)
 
       if (reason === 'io server disconnect') {
         // Server disconnected the client, manual reconnection needed
@@ -131,7 +163,12 @@ class SocketService {
 
     this.socket.on('connect_error', (error) => {
       this.reconnectAttempts++
-      console.error('Connection error:', error)
+      this.isConnecting = false
+      console.error('\n❌ CONNECTION ERROR')
+      console.error('Error details:', error)
+      console.error('Attempt:', this.reconnectAttempts, '/', this.maxReconnectAttempts)
+      console.error('Error message:', error.message)
+      console.error('Error type:', error.type)
 
       if (this.reconnectAttempts >= this.maxReconnectAttempts) {
         toast.error('Failed to connect to server. Please refresh the page.')
@@ -150,16 +187,43 @@ class SocketService {
 
     // Handle general errors
     this.socket.on(SOCKET_EVENTS.ERROR, (error) => {
-      console.error('Socket error:', error)
+      console.error('\n❌ SOCKET ERROR')
+      console.error('Error object:', error)
+      console.error('Error message:', error.message)
+      console.error('Error type:', error.type)
+      console.error('Socket ID:', this.socket?.id)
       toast.error(error.message || 'An error occurred')
+    })
+
+    // Handle authentication errors
+    this.socket.on('auth_error', (error) => {
+      console.error('\n❌ AUTHENTICATION ERROR')
+      console.error('Auth error:', error)
+      toast.error('Authentication failed: ' + (error.message || 'Please refresh the page'))
+    })
+
+    // Handle room errors
+    this.socket.on('room_error', (error) => {
+      console.error('\n❌ ROOM ERROR')
+      console.error('Room error:', error)
+      toast.error('Room error: ' + (error.message || 'Unknown room error'))
+    })
+
+    // Handle game errors
+    this.socket.on('game_error', (error) => {
+      console.error('\n❌ GAME ERROR')
+      console.error('Game error:', error)
+      toast.error('Game error: ' + (error.message || 'Unknown game error'))
     })
   }
 
   disconnect() {
     if (this.socket) {
+      console.log('🔌 Disconnecting socket:', this.socket.id)
       this.socket.disconnect()
       this.socket = null
       this.isConnected = false
+      this.isConnecting = false
     }
   }
 
@@ -168,7 +232,16 @@ class SocketService {
   }
 
   isSocketConnected() {
-    return this.isConnected && this.socket?.connected
+    const connected = this.isConnected && this.socket?.connected
+    if (!connected) {
+      console.log('⚠️ Socket connection check failed:', {
+        isConnected: this.isConnected,
+        socketExists: !!this.socket,
+        socketConnected: this.socket?.connected,
+        socketId: this.socket?.id
+      })
+    }
+    return connected
   }
 
   // Room methods
@@ -179,42 +252,123 @@ class SocketService {
         return
       }
 
+      console.log('\n🏗️ CREATING ROOM with timeControl:', timeControl)
+      console.log('Socket ID:', this.socket.id)
+      console.log('Socket connected:', this.socket.connected)
+
+      let timeoutId: NodeJS.Timeout | null = null
+      let resolved = false
+
+      // Set up timeout
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          console.error('⏰ Room creation timeout after 10 seconds')
+          reject(new Error('Room creation timeout - server did not respond in time'))
+        }
+      }, 10000)
+
       // Use callback pattern as expected by backend
       this.socket.emit(SOCKET_EVENTS.CREATE_ROOM, { gameSettings: timeControl }, (response: any) => {
-        if (response.success) {
-          resolve(response)
+        console.log('\n📥 RECEIVED create_room RESPONSE')
+        console.log('Response:', JSON.stringify(response, null, 2))
+
+        if (resolved) {
+          console.log('⚠️ Response received after timeout, ignoring')
+          return
+        }
+
+        resolved = true
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+
+        if (response && response.success) {
+          console.log('✅ Successfully created room:', response.room?.code)
+          // Set up room event listeners immediately after successful creation
+          this.setupRoomEventListeners()
+          resolve(response.room)  // Return the room data, not the whole response
         } else {
-          reject(new Error(response.error || 'Failed to create room'))
+          console.error('❌ Failed to create room:', response?.error || 'Unknown error')
+          reject(new Error(response?.error || 'Failed to create room - invalid response'))
         }
       })
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        reject(new Error('Room creation timeout'))
-      }, 10000)
     })
   }
 
-  joinRoom(roomCode: string): Promise<RoomData> {
+  joinRoom(roomCode: string, isSpectator: boolean = false): Promise<RoomData> {
     return new Promise((resolve, reject) => {
       if (!this.socket) {
+        console.error('❌ Cannot join room - socket not connected')
         reject(new Error('Socket not connected'))
         return
       }
 
+      console.log(`\n🚪 JOINING ROOM ${roomCode}`)
+      console.log('Socket ID:', this.socket.id)
+      console.log('Socket connected:', this.socket.connected)
+      console.log('Current socket rooms:', Array.from(this.socket.rooms || []))
+
+      const requestData = { roomCode, isSpectator }
+      console.log('📤 Emitting join_room event with data:', JSON.stringify(requestData, null, 2))
+
+      let timeoutId: NodeJS.Timeout | null = null
+      let resolved = false
+
+      // Set up timeout
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          console.error('⏰ Room join timeout after 15 seconds')
+          reject(new Error('Room join timeout - server did not respond in time'))
+        }
+      }, 15000)
+
       // Use callback pattern as expected by backend
-      this.socket.emit(SOCKET_EVENTS.JOIN_ROOM, { roomCode }, (response: any) => {
-        if (response.success) {
-          resolve(response)
+      this.socket.emit(SOCKET_EVENTS.JOIN_ROOM, requestData, (response: any) => {
+        console.log('\n📥 RECEIVED join_room RESPONSE')
+        console.log('Response:', JSON.stringify(response, null, 2))
+        console.log('Socket rooms after join:', Array.from(this.socket?.rooms || []))
+
+        // Log socket room status more thoroughly
+        console.log('🔍 DETAILED SOCKET ROOM STATUS:')
+        console.log('- Socket ID:', this.socket?.id)
+        console.log('- Socket connected:', this.socket?.connected)
+        console.log('- Socket rooms (Array):', Array.from(this.socket?.rooms || []))
+        console.log('- Expected to be in room:', `room_${response?.room?.code}`)
+
+        if (resolved) {
+          console.log('⚠️ Response received after timeout, ignoring')
+          return
+        }
+
+        resolved = true
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+        }
+
+        if (response && response.success) {
+          console.log('✅ Successfully joined room:', response.room?.code)
+
+          // Additional validation: check if we're actually in the room
+          const expectedRoomName = `room_${response.room?.code}`
+          const isInRoom = this.socket?.rooms?.has(expectedRoomName)
+          console.log(`🔍 Are we in room ${expectedRoomName}?`, isInRoom)
+
+          if (!isInRoom) {
+            console.log('⚠️ WARNING: Socket shows success but we are not in the expected room!')
+            console.log('Available rooms:', Array.from(this.socket?.rooms || []))
+            console.log('Expected room:', expectedRoomName)
+          }
+
+          // Set up room event listeners immediately after successful join
+          this.setupRoomEventListeners()
+          resolve(response.room)  // Return the room data, not the whole response
         } else {
-          reject(new Error(response.error || 'Failed to join room'))
+          console.error('❌ Failed to join room:', response?.error || 'Unknown error')
+          reject(new Error(response?.error || 'Failed to join room - invalid response'))
         }
       })
-
-      // Timeout after 10 seconds
-      setTimeout(() => {
-        reject(new Error('Room join timeout'))
-      }, 10000)
     })
   }
 
@@ -225,9 +379,9 @@ class SocketService {
   }
 
   startGame() {
-    if (this.socket) {
-      this.socket.emit(SOCKET_EVENTS.START_GAME)
-    }
+    // Note: This method is deprecated - games start automatically when room is full
+    console.log('startGame() called - but backend starts games automatically when room has 2 players')
+    // No longer emit start_game event as backend doesn't handle it
   }
 
   // Game methods
@@ -299,7 +453,19 @@ class SocketService {
   // Event listeners
   onRoomUpdated(callback: (room: RoomData) => void) {
     if (this.socket) {
-      this.socket.on(SOCKET_EVENTS.ROOM_UPDATED, callback)
+      console.log('📡 Setting up onRoomUpdated listener')
+      // Remove existing listener to prevent duplicates
+      this.socket.off(SOCKET_EVENTS.ROOM_UPDATED)
+      this.socket.off('room_updated')
+
+      // Set up the listener
+      this.socket.on('room_updated', (data) => {
+        console.log('📡 SocketService onRoomUpdated: Received room_updated event')
+        console.log('Room data:', JSON.stringify(data, null, 2))
+        if (data && data.room) {
+          callback(data.room)
+        }
+      })
     }
   }
 
@@ -316,9 +482,48 @@ class SocketService {
   }
 
   onGameStarted(callback: (game: GameState) => void) {
-    if (this.socket) {
-      this.socket.on(SOCKET_EVENTS.GAME_STARTED, callback)
+    if (!this.socket) {
+      console.error('❌ SocketService: Cannot set up game_started listener - socket is null')
+      return
     }
+
+    console.log('\n🎮 SETTING UP game_started LISTENER in socketService')
+    console.log('Socket ID:', this.socket.id)
+    console.log('Socket connected:', this.socket.connected)
+    console.log('Socket rooms:', Array.from(this.socket.rooms || []))
+
+    // Remove any existing game_started listeners to prevent duplicates
+    this.socket.off('game_started')
+
+    // Set up the listener with error handling
+    this.socket.on('game_started', (data) => {
+      console.log('\n🚀 RECEIVED game_started EVENT in SocketService')
+      console.log('Raw event data:', JSON.stringify(data, null, 2))
+
+      try {
+        // Validate the data structure
+        if (!data || !data.gameId || !data.gameState) {
+          console.error('❌ Invalid game_started data structure:', data)
+          return
+        }
+
+        console.log('✅ Valid game_started event received')
+        console.log('Game ID:', data.gameId)
+        console.log('Game State status:', data.gameState?.status)
+        console.log('Players in game:', data.gameState?.players?.length || 0)
+
+        // Call the callback with the full data object
+        callback(data)
+        console.log('✅ Game started callback executed successfully')
+
+      } catch (error) {
+        console.error('❌ Error processing game_started event:', error)
+        console.error('Error stack:', error.stack)
+        console.error('Event data that caused error:', data)
+      }
+    })
+
+    console.log('✅ game_started listener set up successfully')
   }
 
   onMoveMade(callback: (move: any) => void) {
@@ -345,9 +550,81 @@ class SocketService {
     }
   }
 
+  // Setup room-specific event listeners
+  private setupRoomEventListeners() {
+    if (!this.socket) {
+      console.error('❌ Cannot setup room listeners - socket is null')
+      return
+    }
+
+    console.log('\n📡 SETTING UP ROOM EVENT LISTENERS')
+    console.log('Socket ID:', this.socket.id)
+    console.log('Socket connected:', this.socket.connected)
+
+    // Remove existing listeners to prevent duplicates
+    this.socket.off('room_updated')
+
+    // Set up room update listener with simplified logging
+    this.socket.on('room_updated', (data) => {
+      console.log('📡 SocketService: room_updated event received')
+      if (data?.event) {
+        console.log('Room event type:', data.event)
+      }
+    })
+
+    console.log('✅ Room event listeners set up successfully')
+  }
+
+  // Health check method
+  getConnectionHealth() {
+    const socket = this.socket
+    const health = {
+      isConnected: this.isConnected,
+      socketExists: !!socket,
+      socketConnected: socket?.connected || false,
+      socketId: socket?.id || null,
+      transport: socket?.io?.engine?.transport?.name || null,
+      rooms: socket ? Array.from(socket.rooms || []) : [],
+      reconnectAttempts: this.reconnectAttempts,
+      isConnecting: this.isConnecting,
+    }
+
+    console.log('\n🔍 CONNECTION HEALTH CHECK')
+    console.log(JSON.stringify(health, null, 2))
+
+    return health
+  }
+
+  // Enhanced connection check with retry
+  async ensureConnection(maxRetries = 3, retryDelay = 1000): Promise<boolean> {
+    console.log('\n🔄 ENSURING SOCKET CONNECTION')
+
+    for (let i = 0; i < maxRetries; i++) {
+      if (this.isSocketConnected()) {
+        console.log('✅ Socket connection verified')
+        return true
+      }
+
+      console.log(`⚠️ Connection attempt ${i + 1}/${maxRetries}`)
+
+      if (!this.socket || !this.socket.connected) {
+        console.log('🔄 Attempting to reconnect...')
+        this.connect()
+      }
+
+      // Wait for connection
+      await new Promise(resolve => setTimeout(resolve, retryDelay))
+    }
+
+    console.log('❌ Failed to establish socket connection after', maxRetries, 'attempts')
+    this.getConnectionHealth()
+    return false
+  }
+
   // Cleanup methods
   removeAllListeners() {
     if (this.socket) {
+      console.log('🧹 Removing all socket listeners')
       this.socket.removeAllListeners()
       this.setupEventListeners() // Re-add basic connection listeners
     }
@@ -355,6 +632,7 @@ class SocketService {
 
   removeListener(event: string) {
     if (this.socket) {
+      console.log('🧹 Removing listener for event:', event)
       this.socket.off(event)
     }
   }

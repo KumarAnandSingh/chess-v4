@@ -58,9 +58,61 @@ const GamePage: React.FC = () => {
 
   // Initialize game when component mounts
   useEffect(() => {
+    console.log('\n🎮 GAME PAGE: Component mounted')
+    console.log('Game ID from URL:', gameId)
+    console.log('Current game state:', gameState?.gameId)
+    console.log('Player color:', myColor)
+    console.log('Game state exists:', !!gameState)
+    console.log('Game state status:', gameState?.status)
+
     if (!gameId) {
+      console.log('❌ No gameId in URL, redirecting to home')
       navigate('/')
       return
+    }
+
+    // If we don't have game state but have a gameId,
+    // it might mean we navigated directly to this URL or the store was reset
+    if (!gameState && gameId) {
+      console.log('⚠️ No game state found but have gameId - setting up fallback game_started listener')
+
+      // Set up a fallback game_started listener in case the event is fired again
+      const handleGameStartedFallback = (data: any) => {
+        console.log('\n🔄 GAME PAGE: Received fallback game_started event')
+        console.log('Checking if this is our game...')
+        console.log('Event gameId:', data?.gameId)
+        console.log('Expected gameId:', gameId)
+
+        if (data?.gameId === gameId) {
+          console.log('✅ This is our game! Initializing...')
+          const { gameState: newGameState } = data
+
+          // Determine player color using socket ID
+          const currentSocket = socketService.getSocket()
+          const currentSocketId = currentSocket?.id
+          let myColor: 'white' | 'black' | null = null
+
+          if (currentSocketId && newGameState.players) {
+            const myPlayer = newGameState.players.find((p: any) => p.id === currentSocketId)
+            if (myPlayer) {
+              myColor = myPlayer.color
+            }
+          }
+
+          if (myColor && newGameState) {
+            initializeGame(newGameState, myColor)
+            console.log('✅ Game initialized from fallback event')
+          }
+        }
+      }
+
+      socketService.onGameStarted(handleGameStartedFallback)
+
+      // Clean up the fallback listener after a timeout
+      setTimeout(() => {
+        console.log('🧹 Cleaning up fallback game_started listener')
+        socketService.removeListener('game_started')
+      }, 5000)
     }
 
     // Listen for game events
@@ -129,6 +181,10 @@ const GamePage: React.FC = () => {
   }
 
   if (!gameState || !myColor) {
+    console.log('\n⏳ GAME PAGE: Still loading...')
+    console.log('Game state exists:', !!gameState)
+    console.log('Player color exists:', !!myColor)
+
     return (
       <div className="max-w-4xl mx-auto">
         <motion.div
@@ -147,11 +203,21 @@ const GamePage: React.FC = () => {
             <div className="text-lg text-slate-600 dark:text-slate-400">
               Loading game...
             </div>
+            {gameId && (
+              <div className="text-sm text-slate-500 mt-2">
+                Game ID: {gameId}
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
     )
   }
+
+  console.log('\n✅ GAME PAGE: Rendering game successfully')
+  console.log('Game state ID:', gameState.gameId)
+  console.log('Player color:', myColor)
+  console.log('Game status:', gameState.status)
 
   return (
     <>

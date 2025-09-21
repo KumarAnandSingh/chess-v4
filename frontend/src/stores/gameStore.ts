@@ -71,25 +71,105 @@ const initialState: GameStoreState = {
   },
 }
 
-export const useGameStore = create<GameStoreState & GameStoreActions>((set, get) => ({
+// Helper function to save game state to localStorage
+const saveGameStateToStorage = (state: Partial<GameStoreState>) => {
+  try {
+    const gameStateToSave = {
+      gameState: state.gameState,
+      myColor: state.myColor,
+      isGameActive: state.isGameActive,
+      savedAt: Date.now()
+    }
+    localStorage.setItem('chess-game-state', JSON.stringify(gameStateToSave))
+    console.log('💾 Game state saved to localStorage')
+  } catch (error) {
+    console.warn('Failed to save game state to localStorage:', error)
+  }
+}
+
+// Helper function to load game state from localStorage
+const loadGameStateFromStorage = (): Partial<GameStoreState> | null => {
+  try {
+    const saved = localStorage.getItem('chess-game-state')
+    if (!saved) return null
+
+    const parsed = JSON.parse(saved)
+
+    // Check if the saved state is recent (within 1 hour)
+    const isRecent = Date.now() - parsed.savedAt < 60 * 60 * 1000
+    if (!isRecent) {
+      localStorage.removeItem('chess-game-state')
+      return null
+    }
+
+    console.log('📁 Game state loaded from localStorage')
+    return parsed
+  } catch (error) {
+    console.warn('Failed to load game state from localStorage:', error)
+    localStorage.removeItem('chess-game-state')
+    return null
+  }
+}
+
+// Load initial state from localStorage if available
+const savedState = loadGameStateFromStorage()
+const enhancedInitialState = savedState ? {
   ...initialState,
+  gameState: savedState.gameState || null,
+  myColor: savedState.myColor || null,
+  isGameActive: savedState.isGameActive || false,
+  game: savedState.gameState?.fen ? new Chess(savedState.gameState.fen) : new Chess()
+} : initialState
+
+export const useGameStore = create<GameStoreState & GameStoreActions>((set, get) => ({
+  ...enhancedInitialState,
 
   initializeGame: (gameState, myColor) => {
-    const game = new Chess(gameState.position)
+    console.log('\n🏪 GAME STORE: Initializing game')
+    console.log('Received gameState:', JSON.stringify(gameState, null, 2))
+    console.log('Player color:', myColor)
 
-    set({
-      game,
-      gameState,
-      myColor,
-      isMyTurn: game.turn() === myColor[0],
-      isGameActive: gameState.status === 'active',
-      moveHistory: [],
-      selectedSquare: null,
-      possibleMoves: [],
-      lastMove: gameState.lastMove || null,
-      drawOffered: false,
-      drawOfferedBy: null,
-    })
+    // The backend sends FEN position under 'fen' property, not 'position'
+    const fenPosition = gameState.fen || gameState.position || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    console.log('Using FEN position:', fenPosition)
+
+    try {
+      const game = new Chess(fenPosition)
+      console.log('Chess game initialized, current turn:', game.turn())
+
+      const newState = {
+        game,
+        gameState,
+        myColor,
+        isMyTurn: game.turn() === myColor[0],
+        isGameActive: gameState.status === 'active' || gameState.status === 'playing',
+        moveHistory: [],
+        selectedSquare: null,
+        possibleMoves: [],
+        lastMove: gameState.lastMove || null,
+        drawOffered: false,
+        drawOfferedBy: null,
+      }
+
+      console.log('Setting game store state:', {
+        myColor: newState.myColor,
+        isMyTurn: newState.isMyTurn,
+        isGameActive: newState.isGameActive,
+        gameStatus: gameState.status,
+        fenPosition: fenPosition
+      })
+
+      set(newState)
+
+      // Save to localStorage for persistence
+      saveGameStateToStorage(newState)
+
+      console.log('✅ Game store initialized successfully')
+    } catch (error) {
+      console.error('❌ Error initializing chess game:', error)
+      console.error('Invalid FEN position:', fenPosition)
+      throw error
+    }
   },
 
   makeMove: (from, to, promotion) => {
@@ -335,28 +415,33 @@ export const useGameStore = create<GameStoreState & GameStoreActions>((set, get)
 
   reset: () => {
     set(initialState)
+    // Clear localStorage
+    localStorage.removeItem('chess-game-state')
+    console.log('🧹 Game store reset and localStorage cleared')
   },
 }))
 
-// Set up socket event listeners
+// Set up socket event listeners for game events
+// Note: game_started is handled in RoomPage.tsx to initialize store before navigation
 if (typeof window !== 'undefined') {
   const { updateGameState, setDrawOffer } = useGameStore.getState()
 
-  socketService.onGameStarted((gameState) => {
-    // This will be handled by the GamePage component
-    console.log('Game started:', gameState)
-  })
-
   socketService.onMoveMade((moveData) => {
+    console.log('\n♟️ GAME STORE: Received move_made event')
+    console.log('Move data:', JSON.stringify(moveData, null, 2))
     // Update the game state with the new move
     updateGameState(moveData)
   })
 
   socketService.onGameEnded((result) => {
+    console.log('\n🏁 GAME STORE: Received game_ended event')
+    console.log('Game result:', JSON.stringify(result, null, 2))
     updateGameState(result)
   })
 
   socketService.onDrawOffer((playerId) => {
+    console.log('\n🤝 GAME STORE: Received draw_offer event')
+    console.log('Offered by player:', playerId)
     setDrawOffer(true, playerId)
   })
 }

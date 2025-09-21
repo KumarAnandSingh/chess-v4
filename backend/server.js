@@ -27,18 +27,34 @@ const server = http.createServer(app);
 // Parse frontend URLs from environment
 const frontendUrls = process.env.FRONTEND_URL
   ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
-  : ["http://localhost:3000", "http://localhost:1420"];
+  : ["http://localhost:3000", "http://localhost:1420", "http://localhost:3002", "http://localhost:3006", "http://localhost:3007"];
 
 // Initialize Socket.IO with CORS
 const io = socketIo(server, {
   cors: {
-    origin: frontendUrls,
+    origin: function (origin, callback) {
+      console.log('Socket.IO CORS origin check:', origin);
+      console.log('Allowed origins:', frontendUrls);
+
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (frontendUrls.includes(origin)) {
+        console.log('✅ Socket.IO CORS: Origin allowed:', origin);
+        callback(null, true);
+      } else {
+        console.log('❌ Socket.IO CORS: Origin denied:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
+    allowedHeaders: ["*"]
   },
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
-  pingInterval: 25000
+  pingInterval: 25000,
+  allowEIO3: true // Allow backwards compatibility
 });
 
 // Initialize managers
@@ -61,8 +77,25 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: frontendUrls,
-  credentials: true
+  origin: function (origin, callback) {
+    console.log('CORS origin check:', origin);
+    console.log('Allowed origins:', frontendUrls);
+
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    if (frontendUrls.includes(origin)) {
+      console.log('✅ CORS: Origin allowed:', origin);
+      callback(null, true);
+    } else {
+      console.log('❌ CORS: Origin denied:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 200
 }));
 
 // Compression and parsing
@@ -155,6 +188,7 @@ io.on('connection', (socket) => {
   // Create room via socket (alternative to REST API)
   socket.on('create_room', (data, callback) => {
     try {
+      console.log(`Room creation request from ${session.username} (${socket.id}):`, data);
       const { gameSettings } = data;
       const result = roomManager.createRoom(socket.id, session.username, gameSettings);
 
@@ -168,24 +202,38 @@ io.on('connection', (socket) => {
         });
       }
 
+      console.log(`Room creation result:`, result);
       callback(result);
     } catch (error) {
       console.error('Error creating room:', error);
-      callback({ success: false, error: 'Failed to create room' });
+      const errorResult = { success: false, error: 'Failed to create room' };
+      console.log(`Room creation error result:`, errorResult);
+      callback(errorResult);
     }
   });
 
   // Join room via socket
   socket.on('join_room', (data, callback) => {
     try {
+      console.log(`\n🚪 JOIN_ROOM EVENT from ${session.username} (${socket.id})`);
+      console.log(`Request data:`, JSON.stringify(data, null, 2));
+
       const { roomCode, isSpectator } = data;
       const result = roomManager.joinRoom(roomCode, socket.id, session.username, isSpectator);
+      console.log(`RoomManager result:`, JSON.stringify(result, null, 2));
 
       if (result.success) {
+        // Join socket room
         socket.join(`room_${roomCode}`);
+        console.log(`✅ Player ${session.username} (${socket.id}) joined socket room room_${roomCode}`);
+
+        // Verify socket room membership
+        const socketsInRoom = io.sockets.adapter.rooms.get(`room_${roomCode}`);
+        console.log(`🔌 Current sockets in room_${roomCode}:`, socketsInRoom ? Array.from(socketsInRoom) : 'No sockets');
+        console.log(`🏠 Socket rooms for ${socket.id}:`, Array.from(socket.rooms));
 
         // Emit to room
-        socket.to(`room_${roomCode}`).emit('room_updated', {
+        const roomUpdateData = {
           room: result.room,
           event: 'player_joined',
           player: {
@@ -193,18 +241,49 @@ io.on('connection', (socket) => {
             role: result.role,
             color: result.color
           }
-        });
+        };
+        console.log(`📡 Emitting room_updated to room_${roomCode}:`, JSON.stringify(roomUpdateData, null, 2));
+        socket.to(`room_${roomCode}`).emit('room_updated', roomUpdateData);
 
         // If room is full and ready, start game
         const room = roomManager.getRoomInfo(roomCode);
-        if (room && room.playerCount === 2 && room.status === 'waiting') {
-          startRoomGame(roomCode);
+        console.log(`📊 Room ${roomCode} status: playerCount=${room?.playerCount}, status=${room?.status}`);
+
+        if (room && room.playerCount === 2 && (room.status === 'waiting' || room.status === 'ready')) {
+          console.log(`🎮 Room ${roomCode} is full (${room.playerCount}/2 players), starting game...`);
+
+          // Verify both sockets are actually in the room before starting
+          const socketsInRoom = io.sockets.adapter.rooms.get(`room_${roomCode}`);
+          const expectedSocketCount = 2;
+
+          if (socketsInRoom && socketsInRoom.size >= expectedSocketCount) {
+            console.log(`✅ Verified ${socketsInRoom.size} sockets in room, starting game immediately`);
+            startRoomGame(roomCode);
+          } else {
+            console.log(`⏳ Only ${socketsInRoom?.size || 0}/${expectedSocketCount} sockets in room, waiting with longer delay`);
+            // Longer delay with verification retry
+            setTimeout(() => {
+              const socketsInRoomRetry = io.sockets.adapter.rooms.get(`room_${roomCode}`);
+              if (socketsInRoomRetry && socketsInRoomRetry.size >= expectedSocketCount) {
+                startRoomGame(roomCode);
+              } else {
+                console.log(`❌ Still only ${socketsInRoomRetry?.size || 0}/${expectedSocketCount} sockets after retry, forcing game start anyway`);
+                startRoomGame(roomCode);
+              }
+            }, 500);
+          }
+        } else {
+          console.log(`⏳ Room ${roomCode} not ready for game start - playerCount: ${room?.playerCount}, status: ${room?.status}`);
         }
+      } else {
+        console.log(`❌ Failed to join room ${roomCode}:`, result.error);
       }
 
+      console.log(`📤 Sending callback response:`, JSON.stringify(result, null, 2));
       callback(result);
     } catch (error) {
-      console.error('Error joining room:', error);
+      console.error('❌ Error joining room:', error);
+      console.error('Stack trace:', error.stack);
       callback({ success: false, error: 'Failed to join room' });
     }
   });
@@ -514,8 +593,12 @@ function handleDisconnection(socket) {
 
 function startRoomGame(roomCode) {
   try {
+    console.log(`\n=== STARTING ROOM GAME FOR ${roomCode} ===`);
     const room = roomManager.getRoomInfo(roomCode);
+    console.log(`Room info for ${roomCode}:`, JSON.stringify(room, null, 2));
+
     if (!room || room.playerCount !== 2) {
+      console.log(`❌ Cannot start game - Room: ${room ? 'exists' : 'not found'}, Player count: ${room?.playerCount || 0}`);
       return;
     }
 
@@ -524,25 +607,75 @@ function startRoomGame(roomCode) {
       name: player.name,
       color: player.color
     }));
+    console.log(`Players for game:`, JSON.stringify(players, null, 2));
 
     const game = new GameState(room.gameSettings, players);
     activeGames.set(game.gameId, game);
+    console.log(`✅ Game created with ID: ${game.gameId}`);
 
     const startResult = game.startGame();
+    console.log(`Game start result:`, JSON.stringify(startResult, null, 2));
 
     if (startResult.success) {
-      // Emit game start to room
-      io.to(`room_${roomCode}`).emit('game_started', {
-        gameId: game.gameId,
-        gameState: startResult.gameState,
-        room: room
-      });
+      // Update room status to playing
+      roomManager.updateRoomStatus(roomCode, 'playing');
 
-      console.log(`Game started in room ${roomCode}: ${game.gameId}`);
+      // Get fresh room info after status update
+      const updatedRoom = roomManager.getRoomInfo(roomCode);
+
+      // Enhance gameState with socket IDs for proper player identification
+      const enhancedGameState = {
+        ...startResult.gameState,
+        players: players.map(player => ({
+          id: player.id, // This is the socket ID
+          name: player.name,
+          color: player.color,
+          rating: 1200 // Add default rating if needed
+        }))
+      };
+
+      // Emit game start to room
+      const gameStartData = {
+        gameId: game.gameId,
+        gameState: enhancedGameState,
+        room: updatedRoom
+      };
+      console.log(`\n📡 EMITTING game_started EVENT to room_${roomCode}`);
+      console.log(`Event data:`, JSON.stringify(gameStartData, null, 2));
+
+      // Get sockets in the room for debugging
+      const socketsInRoom = io.sockets.adapter.rooms.get(`room_${roomCode}`);
+      console.log(`🔌 Sockets in room_${roomCode}:`, socketsInRoom ? Array.from(socketsInRoom) : 'No sockets found');
+
+      // Verify each socket individually and emit directly if needed
+      if (socketsInRoom && socketsInRoom.size >= 2) {
+        // Emit to the room first
+        io.to(`room_${roomCode}`).emit('game_started', gameStartData);
+        console.log(`📤 game_started event emitted to room_${roomCode}`);
+
+        // Also emit directly to each socket as a backup
+        socketsInRoom.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('game_started', gameStartData);
+            console.log(`🎯 game_started event emitted directly to socket ${socketId}`);
+          }
+        });
+      } else {
+        console.log(`⚠️ Warning: Expected 2 sockets in room but found ${socketsInRoom?.size || 0}`);
+        // Still try to emit to the room
+        io.to(`room_${roomCode}`).emit('game_started', gameStartData);
+      }
+
+      console.log(`✅ Game started in room ${roomCode}: ${game.gameId}`);
+      console.log(`=== END STARTING ROOM GAME ===\n`);
+    } else {
+      console.log(`❌ Failed to start game:`, startResult);
     }
 
   } catch (error) {
-    console.error('Error starting room game:', error);
+    console.error('❌ Error starting room game:', error);
+    console.error('Stack trace:', error.stack);
   }
 }
 

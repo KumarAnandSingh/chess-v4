@@ -44,19 +44,27 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
 
     const CardComponent = clickable ? motion.div : 'div'
 
+    const commonProps = {
+      ref,
+      className: cn(
+        baseClasses,
+        variantClasses[variant],
+        paddingClasses[padding],
+        hoverClasses,
+        className
+      ),
+      ...props
+    }
+
+    const motionProps = clickable ? {
+      whileHover: { scale: 1.02, y: -2 },
+      whileTap: { scale: 0.98 }
+    } : {}
+
     return (
       <CardComponent
-        ref={ref}
-        className={cn(
-          baseClasses,
-          variantClasses[variant],
-          paddingClasses[padding],
-          hoverClasses,
-          className
-        )}
-        whileHover={clickable ? { scale: 1.02, y: -2 } : undefined}
-        whileTap={clickable ? { scale: 0.98 } : undefined}
-        {...props}
+        {...commonProps}
+        {...motionProps}
       >
         {children}
       </CardComponent>

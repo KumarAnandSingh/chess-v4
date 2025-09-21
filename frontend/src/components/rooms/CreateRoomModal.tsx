@@ -43,7 +43,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
     if (!currentRoom) return
 
     try {
-      await navigator.clipboard.writeText(currentRoom.roomCode)
+      await navigator.clipboard.writeText(currentRoom.code)
       setCodeCopied(true)
       toast.success('Room code copied!')
       setTimeout(() => setCodeCopied(false), 2000)
@@ -57,8 +57,8 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
 
     const shareData = {
       title: 'Join my Chess game!',
-      text: `Join my chess game with room code: ${currentRoom.roomCode}`,
-      url: `${window.location.origin}/room/${currentRoom.roomCode}`,
+      text: `Join my chess game with room code: ${currentRoom.code}`,
+      url: `${window.location.origin}/room/${currentRoom.code}`,
     }
 
     try {
@@ -91,7 +91,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                 Room Code
               </div>
               <div className="room-code text-4xl mb-4">
-                {currentRoom.roomCode}
+                {currentRoom?.code || 'Loading...'}
               </div>
               <div className="flex gap-2 justify-center">
                 <Button
@@ -120,7 +120,10 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   Time Control
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400">
-                  {Math.floor(currentRoom.timeControl.time / 60)}+{currentRoom.timeControl.increment}
+                  {currentRoom?.gameSettings ?
+                    `${Math.floor(currentRoom.gameSettings.initialTime / 60000)}+${currentRoom.gameSettings.increment / 1000}` :
+                    'N/A'
+                  }
                 </div>
               </div>
               <div className="text-center p-4 bg-slate-50 dark:bg-slate-700 rounded-lg">
@@ -129,7 +132,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({
                   Players
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400">
-                  {currentRoom.players.length}/2
+                  {currentRoom?.players?.length || 0}/2
                 </div>
               </div>
             </div>
