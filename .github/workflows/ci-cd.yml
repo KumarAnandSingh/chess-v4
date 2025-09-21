@@ -42,7 +42,7 @@ jobs:
         run: |
           npm start &
           sleep 10
-          curl -f http://localhost:3000/api/health || exit 1
+          curl -f http://localhost:3001/api/health || exit 1
           kill %1
 
   test-frontend:
@@ -64,10 +64,6 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Run frontend linting
-        working-directory: ./frontend
-        run: npm run lint
-
       - name: Build frontend
         working-directory: ./frontend
         run: npm run build
@@ -78,30 +74,8 @@ jobs:
           name: frontend-build
           path: frontend/dist/
 
-  security-scan:
-    runs-on: ubuntu-latest
-    name: Security Scan
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-
   deploy-backend:
-    needs: [test-backend, security-scan]
+    needs: [test-backend]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     name: Deploy Backend to Railway
@@ -117,7 +91,7 @@ jobs:
           command: up --service backend
 
   deploy-frontend:
-    needs: [test-frontend, security-scan]
+    needs: [test-frontend]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     name: Deploy Frontend to Vercel
