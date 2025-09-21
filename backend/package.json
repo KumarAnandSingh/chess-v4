@@ -10,11 +10,11 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "echo 'Linting not configured' && exit 0",
-    "health": "curl http://localhost:3000/api/health",
+    "health": "curl -f http://localhost:3001/api/health",
     "build": "echo 'No build step required for Node.js' && exit 0",
     "deploy": "echo 'Deploy via Railway CLI or GitHub Actions'",
     "docker:build": "docker build -t chess-v4-backend .",
-    "docker:run": "docker run -p 3000:3000 chess-v4-backend"
+    "docker:run": "docker run -p 3001:3001 chess-v4-backend"
   },
   "keywords": [
     "chess",
