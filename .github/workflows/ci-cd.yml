@@ -77,7 +77,7 @@ jobs:
   deploy-backend:
     needs: [test-backend]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_DEPLOYMENTS == 'true'
     name: Deploy Backend to Railway
 
     steps:
@@ -87,18 +87,30 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
+      - name: Check Railway Token
+        run: |
+          if [ -z "${{ secrets.RAILWAY_TOKEN }}" ]; then
+            echo "⚠️ RAILWAY_TOKEN secret not configured - skipping deployment"
+            echo "To enable Railway deployment, add RAILWAY_TOKEN to repository secrets"
+            exit 0
+          fi
+
       - name: Deploy to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          railway login --token $RAILWAY_TOKEN
-          railway up --service backend
+          if [ -n "$RAILWAY_TOKEN" ]; then
+            echo "🚀 Deploying to Railway..."
+            railway up --service backend
+          else
+            echo "⚠️ Skipping Railway deployment - token not configured"
+          fi
         working-directory: ./backend
 
   deploy-frontend:
     needs: [test-frontend]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_DEPLOYMENTS == 'true'
     name: Deploy Frontend to Vercel
 
     steps:
@@ -120,7 +132,16 @@ jobs:
         working-directory: ./frontend
         run: npm run build
 
+      - name: Check Vercel Configuration
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ] || [ -z "${{ secrets.VERCEL_ORG_ID }}" ] || [ -z "${{ secrets.VERCEL_PROJECT_ID }}" ]; then
+            echo "⚠️ Vercel secrets not fully configured - skipping deployment"
+            echo "Required secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID"
+            exit 0
+          fi
+
       - name: Deploy to Vercel
+        if: ${{ secrets.VERCEL_TOKEN && secrets.VERCEL_ORG_ID && secrets.VERCEL_PROJECT_ID }}
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -130,20 +151,41 @@ jobs:
           vercel-args: '--prod'
 
   notify:
-    needs: [deploy-backend, deploy-frontend]
+    needs: [test-backend, test-frontend, deploy-backend, deploy-frontend]
     runs-on: ubuntu-latest
     if: always()
-    name: Deployment Notification
+    name: Build and Deployment Summary
 
     steps:
-      - name: Notify deployment status
+      - name: Summary
         run: |
-          if [[ "${{ needs.deploy-backend.result }}" == "success" && "${{ needs.deploy-frontend.result }}" == "success" ]]; then
-            echo "✅ Chess v4 deployed successfully!"
-            echo "Backend: Railway deployment completed"
-            echo "Frontend: Vercel deployment completed"
+          echo "🎯 Chess v4 CI/CD Pipeline Summary"
+          echo "======================================"
+          echo "Backend Tests: ${{ needs.test-backend.result }}"
+          echo "Frontend Tests: ${{ needs.test-frontend.result }}"
+          echo ""
+
+          # Check if deployment jobs ran
+          if [[ "${{ needs.deploy-backend.result }}" != "skipped" ]] && [[ "${{ needs.deploy-frontend.result }}" != "skipped" ]]; then
+            echo "Deployment Results:"
+            echo "Backend Deployment: ${{ needs.deploy-backend.result }}"
+            echo "Frontend Deployment: ${{ needs.deploy-frontend.result }}"
+
+            if [[ "${{ needs.deploy-backend.result }}" == "success" && "${{ needs.deploy-frontend.result }}" == "success" ]]; then
+              echo "✅ Chess v4 deployed successfully!"
+            else
+              echo "⚠️ Some deployments had issues - check logs above"
+            fi
           else
-            echo "❌ Chess v4 deployment failed"
-            echo "Backend status: ${{ needs.deploy-backend.result }}"
-            echo "Frontend status: ${{ needs.deploy-frontend.result }}"
+            echo "⏭️ Deployments skipped (ENABLE_DEPLOYMENTS not set or secrets missing)"
+            echo "To enable deployments:"
+            echo "1. Set repository variable ENABLE_DEPLOYMENTS=true"
+            echo "2. Add required secrets: RAILWAY_TOKEN, VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID"
+          fi
+
+          echo ""
+          if [[ "${{ needs.test-backend.result }}" == "success" && "${{ needs.test-frontend.result }}" == "success" ]]; then
+            echo "🎉 All tests passed! The application is ready for deployment."
+          else
+            echo "❌ Some tests failed - please review the test results above."
           fi
