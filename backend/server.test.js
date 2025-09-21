@@ -55,12 +55,13 @@ describe('Chess v4 Backend Server', () => {
   });
 
   describe('CORS Headers', () => {
-    test('Should include CORS headers in responses', async () => {
+    test('Should include CORS headers when origin is provided', async () => {
       const response = await request(server)
-        .get('/api/health');
+        .get('/api/health')
+        .set('Origin', 'http://localhost:3000');
 
-      // CORS headers are conditional based on origin, so check for other CORS-related headers
-      expect(response.headers).toHaveProperty('access-control-allow-credentials');
+      // When origin is provided and allowed, CORS headers should be present
+      expect(response.headers).toHaveProperty('access-control-allow-origin');
     });
   });
 
